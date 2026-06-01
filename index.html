@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL Auto QR Code</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #030303;
+            --card-bg: rgba(10, 10, 10, 0.72);
+            --fg: #f0f0f0;
+            --muted: #666;
+            --accent-cyan: #00e5ff;
+            --accent-violet: #8b5cf6;
+            --border: rgba(255,255,255,0.06);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #scene-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+        }
+
+        /* Vinheta cinematográfica */
+        .vignette {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.75) 100%);
+        }
+
+        /* Gradiente de transição na base */
+        .base-fade {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            height: 220px;
+            z-index: 2;
+            pointer-events: none;
+            background: linear-gradient(transparent, rgba(3,3,3,0.55));
+        }
+
+        /* Dica de interação */
+        .hint {
+            position: fixed;
+            top: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            color: var(--muted);
+            font-size: 0.6rem;
+            font-weight: 300;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            pointer-events: none;
+            opacity: 0;
+            animation: hintIn 0.6s ease 2.5s forwards;
+        }
+
+        @keyframes hintIn { to { opacity: 0.5; } }
+
+        /* Card overlay */
+        .overlay {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            padding: 1.8rem 1.5rem 2.2rem;
+            pointer-events: none;
+        }
+
+        .card {
+            pointer-events: all;
+            position: relative;
+            background: var(--card-bg);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 1.8rem 2rem 1.6rem;
+            max-width: 350px;
+            width: 100%;
+            text-align: center;
+            animation: cardUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.4s both;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 19px;
+            background: linear-gradient(135deg, rgba(0,229,255,0.12), rgba(139,92,246,0.12));
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+        }
+
+        .card:hover::before { opacity: 1; }
+
+        @keyframes cardUp {
+            from { opacity: 0; transform: translateY(50px) scale(0.96); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .card h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            margin-bottom: 0.2rem;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-violet));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .card .subtitle {
+            color: var(--muted);
+            font-size: 0.68rem;
+            font-weight: 300;
+            margin-bottom: 1.3rem;
+        }
+
+        .qr-wrapper {
+            background: #fff;
+            padding: 0.55rem;
+            border-radius: 10px;
+            display: inline-block;
+            margin-bottom: 1.1rem;
+            box-shadow:
+                0 0 30px rgba(0,229,255,0.1),
+                0 0 30px rgba(139,92,246,0.1),
+                0 6px 24px rgba(0,0,0,0.4);
+            transition: box-shadow 0.4s ease;
+        }
+
+        .qr-wrapper:hover {
+            box-shadow:
+                0 0 45px rgba(0,229,255,0.18),
+                0 0 45px rgba(139,92,246,0.18),
+                0 8px 30px rgba(0,0,0,0.5);
+        }
+
+        #qr-canvas {
+            display: block;
+            width: 170px;
+            height: 170px;
+            border-radius: 4px;
+        }
+
+        .url-box {
+            background: rgba(255,255,255,0.03);
+            padding: 0.6rem 0.85rem;
+            border-radius: 8px;
+            word-break: break-all;
+            font-size: 0.62rem;
+            border: 1px solid var(--border);
+            line-height: 1.6;
+        }
+
+        .url-box a {
+            color: var(--accent-cyan);
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .url-box a:hover { color: var(--accent-violet); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .card { animation: none; opacity: 1; }
+            .hint { animation: none; opacity: 0.4; }
+        }
+
+        @media (max-width: 480px) {
+            .overlay { padding: 1rem 0.8rem 1.4rem; }
+            .card { padding: 1.3rem 1.2rem 1.2rem; border-radius: 14px; }
+            #qr-canvas { width: 140px; height: 140px; }
+            .card h1 { font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="scene-canvas"></canvas>
+    <div class="vignette"></div>
+    <div class="base-fade"></div>
+    <div class="hint">Arraste para girar a exposicao</div>
+
+    <div class="overlay">
+        <div class="card">
+            <h1>GL Auto QR Code</h1>
+            <p class="subtitle">QR Code gerado para a URL atual deste arquivo</p>
+            <div class="qr-wrapper">
+                <canvas id="qr-canvas"></canvas>
+            </div>
+            <div class="url-box">
+                <a id="url-display" href="#" target="_blank" rel="noopener noreferrer">Aguardando...</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Geração do QR Code -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const currentUrl = window.location.href;
+            const urlDisplay = document.getElementById('url-display');
+            urlDisplay.textContent = currentUrl;
+            urlDisplay.href = currentUrl;
+
+            new QRious({
+                element: document.getElementById('qr-canvas'),
+                value: currentUrl,
+                size: 512,
+                background: '#ffffff',
+                foreground: '#0a0a0a',
+                level: 'H'
+            });
+        });
+    </script>
+
+    <!-- Import Map Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <!-- Cena 3D do Museu Digital -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        /* =====================
+           RENDERIZADOR
+        ===================== */
+        const canvas = document.getElementById('scene-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.85;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+        /* =====================
+           CENA & CÂMERA
+        ===================== */
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x020202);
+        scene.fog = new THREE.FogExp2(0x020202, 0.055);
+
+        const camera = new THREE.PerspectiveCamera(
+            30, window.innerWidth / window.innerHeight, 0.1, 100
+        );
+        camera.position.set(0, 3.4, 7);
+
+        /* =====================
+           CONTROLES ORBITAIS
+        ===================== */
+        const controls = new OrbitControls(camera, canvas);
+        controls.target.set(0, 1.7, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.04;
+        controls.minPolarAngle = Math.PI * 0.12;
+        controls.maxPolarAngle = Math.PI * 0.56;
+        controls.minDistance = 3.5;
+        controls.maxDistance = 14;
+        controls.enablePan = false;
+        controls.update();
+
+        /* =====================
+           PÓS-PROCESSAMENTO
+        ===================== */
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        const bloom = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.3, 0.45, 0.6
+        );
+        composer.addPass(bloom);
+        composer.addPass(new OutputPass());
+
+        /* =====================
+           ILUMINAÇÃO
+        ===================== */
+        scene.add(new THREE.AmbientLight(0x080818, 0.5));
+
+        const cyanLight = new THREE.PointLight(0x00e5ff, 3, 20);
+        cyanLight.position.set(-4, 4.5, 2.5);
+        scene.add(cyanLight);
+
+        const violetLight = new THREE.PointLight(0x8b5cf6, 3, 20);
+        violetLight.position.set(4, 4.5, -2.5);
+        scene.add(violetLight);
+
+        const spotLight = new THREE.SpotLight(0xeeeeff, 2, 25, Math.PI * 0.12, 0.7, 1);
+        spotLight.position.set(0, 12, 1);
+        spotLight.target.position.set(0, 0, 0);
+        scene.add(spotLight);
+        scene.add(spotLight.target);
+
+        /* =====================
+           CHÃO — CONCRETO POLIDO
+        ===================== */
+        const floor = new THREE.Mesh(
+            new THREE.PlaneGeometry(50, 50),
+            new THREE.MeshStandardMaterial({
+                color: 0x0c0c0c,
+                metalness: 0.88,
+                roughness: 0.12,
+            })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        /* =====================
+           PAREDES DO MUSEU
+        ===================== */
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0x050505, roughness: 0.95, metalness: 0.05,
+        });
+        const backWall = new THREE.Mesh(new THREE.PlaneGeometry(50, 16), wallMat);
+        backWall.position.set(0, 8, -14);
+        scene.add(backWall);
+
+        const lWall = new THREE.Mesh(new THREE.PlaneGeometry(28, 16), wallMat);
+        lWall.position.set(-14, 8, 0);
+        lWall.rotation.y = Math.PI / 2;
+        scene.add(lWall);
+
+        const rWall = new THREE.Mesh(new THREE.PlaneGeometry(28, 16), wallMat);
+        rWall.position.set(14, 8, 0);
+        rWall.rotation.y = -Math.PI / 2;
+        scene.add(rWall);
+
+        /* =====================
+           PEDESTAL HEXAGONAL
+        ===================== */
+        const HEX_R = 1.4;
+        const HEX_H = 0.38;
+
+        // Corpo principal — preto fosco
+        const hexBase = new THREE.Mesh(
+            new THREE.CylinderGeometry(HEX_R, HEX_R * 1.06, HEX_H, 6),
+            new THREE.MeshStandardMaterial({
+                color: 0x070707, metalness: 0.04, roughness: 0.96,
+            })
+        );
+        hexBase.position.y = HEX_H / 2;
+        scene.add(hexBase);
+
+        // Anel neon no topo do pedestal — ciano
+        const topRing = new THREE.Mesh(
+            new THREE.TorusGeometry(HEX_R * 0.92, 0.012, 8, 6),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0x00e5ff).multiplyScalar(2.5) })
+        );
+        topRing.rotation.x = -Math.PI / 2;
+        topRing.position.y = HEX_H + 0.006;
+        scene.add(topRing);
+
+        // Anel neon na base — violeta
+        const btmRing = new THREE.Mesh(
+            new THREE.TorusGeometry(HEX_R * 1.03, 0.01, 8, 6),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(0x8b5cf6).multiplyScalar(2) })
+        );
+        btmRing.rotation.x = -Math.PI / 2;
+        btmRing.position.y = 0.006;
+        scene.add(btmRing);
+
+        /* =====================
+           MOLDURA DE ACRÍLICO LEVITANTE
+           (cubo wireframe com painéis de vidro)
+        ===================== */
+        const FS = 1.15;          // tamanho da moldura
+        const FY = 2.2;           // altura central
+        const H  = FS / 2;
+        const frameGroup = new THREE.Group();
+
+        // Cria tubo neon para cada aresta
+        function neonTube(a, b, hex) {
+            const s = new THREE.Vector3(...a);
+            const e = new THREE.Vector3(...b);
+            const dir = new THREE.Vector3().subVectors(e, s);
+            const len = Math.max(0.001, dir.length());
+            const mid = new THREE.Vector3().addVectors(s, e).multiplyScalar(0.5);
+
+            const geo = new THREE.CylinderGeometry(0.009, 0.009, len, 6);
+            const mat = new THREE.MeshBasicMaterial({
+                color: new THREE.Color(hex).multiplyScalar(3.5),
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(mid);
+
+            const up = new THREE.Vector3(0, 1, 0);
+            const d  = dir.clone().normalize();
+            if (Math.abs(d.dot(up)) < 0.9999) {
+                mesh.quaternion.setFromUnitVectors(up, d);
+            } else if (d.y < 0) {
+                mesh.rotation.z = Math.PI;
+            }
+            return mesh;
+        }
+
+        const C1 = 0x00e5ff, C2 = 0x8b5cf6;
+        const y0 = FY - H, y1 = FY + H;
+        const edges = [
+            // Base
+            [[-H,y0,-H],[H,y0,-H],C1], [[H,y0,-H],[H,y0,H],C2],
+            [[H,y0,H],[-H,y0,H],C1],   [[-H,y0,H],[-H,y0,-H],C2],
+            // Topo
+            [[-H,y1,-H],[H,y1,-H],C2],  [[H,y1,-H],[H,y1,H],C1],
+            [[H,y1,H],[-H,y1,H],C2],    [[-H,y1,H],[-H,y1,-H],C1],
+            // Verticais
+            [[-H,y0,-H],[-H,y1,-H],C1], [[H,y0,-H],[H,y1,-H],C2],
+            [[H,y0,H],[H,y1,H],C1],     [[-H,y0,H],[-H,y1,H],C2],
+        ];
+        edges.forEach(([a, b, c]) => frameGroup.add(neonTube(a, b, c)));
+
+        // Painéis de vidro
+        const glassMat = new THREE.MeshBasicMaterial({
+            color: 0x99bbdd,
+            transparent: true,
+            opacity: 0.035,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        });
+        const gp = new THREE.PlaneGeometry(FS, FS);
+        [
+            { p:[0,FY,-H], r:[0,0,0] },
+            { p:[0,FY,H],  r:[0,Math.PI,0] },
+            { p:[-H,FY,0], r:[0,Math.PI/2,0] },
+            { p:[H,FY,0],  r:[0,-Math.PI/2,0] },
+            { p:[0,y1,0],  r:[Math.PI/2,0,0] },
+            { p:[0,y0,0],  r:[-Math.PI/2,0,0] },
+        ].forEach(({p, r}) => {
+            const m = new THREE.Mesh(gp, glassMat);
+            m.position.set(...p);
+            m.rotation.set(...r);
+            frameGroup.add(m);
+        });
+
+        scene.add(frameGroup);
+
+        /* =====================
+           CUBO HOLOGRÁFICO
+        ===================== */
+        const CS = 0.42;
+        const holoGeo = new THREE.BoxGeometry(CS, CS, CS);
+
+        const holoMat = new THREE.ShaderMaterial({
+            uniforms: { uTime: { value: 0 } },
+            vertexShader: `
+                varying vec3 vN;
+                varying vec3 vP;
+                varying vec2 vUv;
+                void main(){
+                    vN = normalize(normalMatrix * normal);
+                    vec4 mv = modelViewMatrix * vec4(position,1.0);
+                    vP = mv.xyz;
+                    vUv = uv;
+                    gl_Position = projectionMatrix * mv;
+                }
+            `,
+            fragmentShader: `
+                uniform float uTime;
+                varying vec3 vN;
+                varying vec3 vP;
+                varying vec2 vUv;
+                void main(){
+                    vec3 V = normalize(-vP);
+                    float fr = pow(1.0 - abs(dot(V, vN)), 3.0);
+
+                    vec3 cy = vec3(0.0, 0.9, 1.0);
+                    vec3 vi = vec3(0.545, 0.361, 0.965);
+                    vec3 mg = vec3(1.0, 0.2, 0.55);
+                    vec3 gd = vec3(1.0, 0.82, 0.15);
+
+                    float t1 = sin(uTime*0.7 + fr*6.28 + vUv.x*4.0)*0.5+0.5;
+                    float t2 = cos(uTime*0.5 + vUv.y*4.0 + 1.57)*0.5+0.5;
+
+                    vec3 c = mix(cy, vi, t1);
+                    c = mix(c, mg, fr*0.55);
+                    c = mix(c, gd, t2*fr*0.35);
+
+                    // Grade holográfica
+                    float gx = smoothstep(0.012,0.0,abs(fract(vUv.x*10.0)-0.5)-0.488);
+                    float gy = smoothstep(0.012,0.0,abs(fract(vUv.y*10.0)-0.5)-0.488);
+                    c += max(gx,gy)*0.35*mix(cy,vi,t1);
+
+                    // Scanlines
+                    float sc = smoothstep(0.025,0.0,abs(fract(vUv.y*30.0-uTime*0.25)-0.5)-0.488);
+                    c += sc*cy*0.12;
+
+                    c *= 2.2; // HDR para bloom
+                    float a = 0.1 + fr*0.9;
+                    gl_FragColor = vec4(c, a);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        });
+
+        const holoCube = new THREE.Mesh(holoGeo, holoMat);
+        holoCube.position.y = FY;
+        scene.add(holoCube);
+
+        // Arestas brilhantes do cubo
+        holoCube.add(new THREE.LineSegments(
+            new THREE.EdgesGeometry(holoGeo),
+            new THREE.LineBasicMaterial({
+                color: new THREE.Color(0x00e5ff).multiplyScalar(3),
+                transparent: true, opacity: 0.85,
+            })
+        ));
+
+        // Wireframe interno (cubo menor girando em sentido oposto)
+        const innerWire = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(CS*0.6, CS*0.6, CS*0.6)),
+            new THREE.LineBasicMaterial({
+                color: new THREE.Color(0x8b5cf6).multiplyScalar(2.5),
+                transparent: true, opacity: 0.5,
+            })
+        );
+        holoCube.add(innerWire);
+
+        /* =====================
+           DISCO DE BRILHO NO CHÃO
+        ===================== */
+        const glowCyan = new THREE.Mesh(
+            new THREE.CircleGeometry(2.8, 48),
+            new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0x00e5ff).multiplyScalar(0.35),
+                transparent: true, opacity: 0.07, depthWrite: false,
+            })
+        );
+        glowCyan.rotation.x = -Math.PI/2;
+        glowCyan.position.y = 0.004;
+        scene.add(glowCyan);
+
+        const glowViolet = new THREE.Mesh(
+            new THREE.CircleGeometry(2.2, 48),
+            new THREE.MeshBasicMaterial({
+                color: new THREE.Color(0x8b5cf6).multiplyScalar(0.28),
+                transparent: true, opacity: 0.05, depthWrite: false,
+            })
+        );
+        glowViolet.rotation.x = -Math.PI/2;
+        glowViolet.position.y = 0.002;
+        scene.add(glowViolet);
+
+        /* =====================
+           FEIXE DE LUZ VOLUMÉTRICO
+        ===================== */
+        const beam = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.15, 1.4, 11, 32, 1, true),
+            new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.01,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+            })
+        );
+        beam.position.y = 6;
+        scene.add(beam);
+
+        /* =====================
+           PARTÍCULAS FLUTUANTES
+        ===================== */
+        const PC = 250;
+        const pPos = new Float32Array(PC * 3);
+        for (let i = 0; i < PC; i++) {
+            pPos[i*3]   = (Math.random()-0.5)*16;
+            pPos[i*3+1] = Math.random()*8;
+            pPos[i*3+2] = (Math.random()-0.5)*16;
+        }
+        const pGeo = new THREE.BufferGeometry();
+        pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+        const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
+            color: 0x00e5ff, size: 0.018,
+            transparent: true, opacity: 0.3,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        scene.add(particles);
+
+        // Segundo grupo de partículas — violeta
+        const p2Pos = new Float32Array(120 * 3);
+        for (let i = 0; i < 120; i++) {
+            p2Pos[i*3]   = (Math.random()-0.5)*14;
+            p2Pos[i*3+1] = Math.random()*7;
+            p2Pos[i*3+2] = (Math.random()-0.5)*14;
+        }
+        const p2Geo = new THREE.BufferGeometry();
+        p2Geo.setAttribute('position', new THREE.BufferAttribute(p2Pos, 3));
+        const particles2 = new THREE.Points(p2Geo, new THREE.PointsMaterial({
+            color: 0x8b5cf6, size: 0.014,
+            transparent: true, opacity: 0.22,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        scene.add(particles2);
+
+        /* =====================
+           LOOP DE ANIMAÇÃO
+        ===================== */
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            // Rotação do cubo holográfico
+            holoCube.rotation.y = t * 0.22;
+            holoCube.rotation.x = Math.sin(t * 0.16) * 0.22;
+            holoCube.rotation.z = Math.cos(t * 0.11) * 0.12;
+
+            // Wireframe interno gira em sentido contrário
+            innerWire.rotation.y = -t * 0.35;
+            innerWire.rotation.x = t * 0.2;
+
+            // Uniform de tempo
+            holoMat.uniforms.uTime.value = t;
+
+            // Flutuação sutil da moldura
+            frameGroup.position.y = Math.sin(t * 0.55) * 0.035;
+
+            // Pulsação das luzes
+            cyanLight.intensity   = 3 + Math.sin(t * 1.2) * 0.7;
+            violetLight.intensity = 3 + Math.cos(t * 1.0) * 0.7;
+
+            // Pulsação dos discos de chão
+            glowCyan.material.opacity   = 0.07 + Math.sin(t * 0.7) * 0.02;
+            glowViolet.material.opacity = 0.05 + Math.cos(t * 0.55) * 0.015;
+
+            // Partículas subindo
+            const pa = particles.geometry.attributes.position.array;
+            for (let i = 0; i < PC; i++) {
+                pa[i*3+1] += 0.0018;
+                if (pa[i*3+1] > 8) pa[i*3+1] = 0;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.rotation.y = t * 0.012;
+
+            const pa2 = particles2.geometry.attributes.position.array;
+            for (let i = 0; i < 120; i++) {
+                pa2[i*3+1] += 0.0012;
+                if (pa2[i*3+1] > 7) pa2[i*3+1] = 0;
+            }
+            particles2.geometry.attributes.position.needsUpdate = true;
+            particles2.rotation.y = -t * 0.008;
+
+            controls.update();
+            composer.render();
+        }
+
+        animate();
+
+        /* =====================
+           REDIMENSIONAMENTO
+        ===================== */
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth, h = window.innerHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            composer.setSize(w, h);
+        });
+    </script>
+</body>
+</html>
